@@ -18,4 +18,4 @@ Runs basic [Express](https://www.npmjs.com/package/express) and [Sharp](https://
 
 ## Credits
 
-Photo by [Errin Casano]([https://www.pexels.com/@errin-casano-1240439?utm_content=attributionCopyText&utm_medium=referral&utm_source=pexels) from [Pexels](https://www.pexels.com/photo/rocky-mountains-under-blue-sky-2356059/?utm_content=attributionCopyText&utm_medium=referral&utm_source=pexels)
+Photo by [Errin Casano](https://www.pexels.com/@errin-casano-1240439?utm_content=attributionCopyText&utm_medium=referral&utm_source=pexels) from [Pexels](https://www.pexels.com/photo/rocky-mountains-under-blue-sky-2356059/?utm_content=attributionCopyText&utm_medium=referral&utm_source=pexels)
