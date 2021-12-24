@@ -1,13 +1,10 @@
 import * as aws from "@pulumi/aws";
+import * as pulumi from "@pulumi/pulumi";
 
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
-import axios from 'axios';
 import * as Bluebird from 'bluebird';
-import * as b from 'benny';
-import * as express from 'express';
-import * as fs from 'fs';
 
-import { project, region, stack } from './config';
+import { account, project, region, stack } from './config';
 import { role } from './iam';
 
 const RUN_TIME = 10;
@@ -15,81 +12,45 @@ const TOTAL_RUNS = 10;
 
 const lambdas:string[] = [];
 
-const LAYER_X64 = './layer/dist/layer-x64.zip';
-const LAYER_ARM64 = './layer/dist/layer-arm64.zip';
+for (const arch of ['x64', 'arm64']) {
+  const repository = new aws.ecr.Repository(`${project}-${stack}-repository-${arch}`, {
+    name: `${project}-${stack}-${arch}`,
+    imageTagMutability: 'MUTABLE',
+  });
 
-if (!fs.existsSync(LAYER_X64) || !fs.existsSync(LAYER_ARM64)) {
-  throw new Error('Layers not found. Run "npm run layer"');
-}
+  new aws.ecr.RepositoryPolicy(`${project}-${stack}-repository-${arch}-policy`, {
+    repository: repository.name,
+    policy: JSON.stringify({
+      Version: "2012-10-17",
+      Statement: [{
+        "Sid": `GetImage-${project}-${stack}`,
+        "Effect": "Allow",
+        "Principal": {
+          "Service": "lambda.amazonaws.com"
+        },
+        "Action": [
+          "ecr:BatchGetImage",
+          "ecr:GetDownloadUrlForLayer"
+        ],
+      }],
+    }),
+  });
 
-const layerX64 = new aws.lambda.LayerVersion(`${project}-${stack}-layer-x64`, {
-  code: LAYER_X64,
-  layerName: `${project}-${stack}-x64`,
-  compatibleArchitectures: ['x86_64'],
-  compatibleRuntimes: ['nodejs14.x'],
-  description: `${project}-${stack} - x64 dependencies`,
-});
+  for (let i = 7; i <= 14; i++) {
+    const size = Math.min(2 ** i, 10240);
+    const name = `${project}-${stack}-${arch}-${size}`;
 
-const layerArm64 = new aws.lambda.LayerVersion(`${project}-${stack}-layer-arm64`, {
-  code: LAYER_ARM64,
-  layerName: `${project}-${stack}-arm64`,
-  compatibleArchitectures: ['arm64'],
-  compatibleRuntimes: ['nodejs14.x'],
-  description: `${project}-${stack} - arm64 dependencies`,
-});
-
-for (const arch of ['x86_64', 'arm64']) {
-  for (let i = 7; i <= 13; i++) {
-    const size = 2 ** i;
-    const name = `${project}-${stack}-express-${arch}-${size}`;
-
-    console.log(name);
     lambdas.push(name);
 
-    new aws.lambda.CallbackFunction(`${project}-${stack}-lambda-express-${arch}-${i}`, {
+    new aws.lambda.Function(name, {
       name: name,
-      runtime: 'nodejs14.x',
-      architectures: [arch],
+      architectures: [arch === 'x64' ? 'x86_64' : 'arm64'],
       memorySize: size,
       timeout: Math.max(60, RUN_TIME),
-      // layers: [
-      //   arch === 'x86_64' ? layerX64.arn : layerArm64.arn,
-      // ],
-      role: role,
-      description: `${project}-${stack} - Express.js (${arch} ${size} MB).`,
-      callback: (event:any, context, callback) => {
-        const PORT = 3000;
-
-        const app = express();
-        
-        app.post('/', (req, res) => {
-          res.json(req.body);
-        });
-        
-        const server = app.listen(PORT);
-        
-        const suite = b.suite('Lambda benchmark', 
-          b.add.only('Run Express', async () => {
-            const runner = async () => {
-              await axios.post(`http://localhost:${PORT}/`, {});
-            };
-        
-            await runner();
-        
-            return runner;
-          }, {
-            maxTime: event.time,
-          }),
-          b.cycle(),
-          b.complete(() => {
-            server.close();
-          }),
-        );
-        
-        suite.then((s) => {
-          callback(null, s);
-        });
-      },
+      role: role.arn,
+      description: `${project}-${stack} - Worker (${arch} ${size} MB).`,
+      imageUri: pulumi.interpolate`${account}.dkr.ecr.${region}.amazonaws.com/${repository.name}:latest`,
+      packageType: 'Image',
     });
   }
 }
@@ -98,12 +59,14 @@ export const runner = new aws.lambda.CallbackFunction(`${project}-${stack}-lambd
   name: `${project}-${stack}-runner`,
   runtime: 'nodejs14.x',
   memorySize: 128,
-  timeout: 300,
+  timeout: 600,
   role: role,
   description: `${project}-${stack} runner`,
   callback: (event, context, callback) => {
-    const client = new LambdaClient({ region });
     const tasks = [];
+    const client = new LambdaClient({ region });
+
+    let num = 0;
 
     for (let i = 0; i < TOTAL_RUNS; i++) {
       const task = async () => {
@@ -122,10 +85,19 @@ export const runner = new aws.lambda.CallbackFunction(`${project}-${stack}-lambd
 
             results.forEach((res, i) => {
               const stats = JSON.parse(Buffer.from(res!).toString('utf-8'));
-              data[lambdas[i]] = stats.results[0].ops;
+
+              if (stats.results) {
+                stats.results.forEach((stat:any) => {
+                  data[lambdas[i] + '_' + stat.name] = stat.ops;
+                })
+              } else {
+                console.error(`Result from ${lambdas[i]}: no data`, stats);
+              }
             });
 
-            console.log(`Run #${i}:`, data);
+            num += 1;
+
+            console.log(`Run #${num}:`, data);
 
             return data;
           });
@@ -159,3 +131,5 @@ export const runner = new aws.lambda.CallbackFunction(`${project}-${stack}-lambd
       .catch(err => callback(err));
   },
 });
+
+export const lambdaNames = lambdas;

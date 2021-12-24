@@ -1,0 +1,24 @@
+FROM public.ecr.aws/lambda/nodejs:14-arm64
+
+RUN yum -y groupinstall "Development Tools" \
+  && yum -y install wget \
+  && yum -y install glib2 glib2-devel \
+  && yum -y install expat expat-devel
+RUN yum -y install libjpeg-devel
+RUN wget https://github.com/libvips/libvips/releases/download/v8.11.3/vips-8.11.3.tar.gz \
+  && tar xf vips-8.11.3.tar.gz \
+  && cd vips-8.11.3 \
+  && ./configure \
+  && make \
+  && make install \
+  && echo "/usr/local/lib" > /etc/ld.so.conf.d/usrlocal.conf \
+  && /sbin/ldconfig -v \
+  && cd .. \
+  && rm -rf vips-8.11.3 \
+  && rm vips-8.11.3.tar.gz
+
+COPY index.js image.jpeg package.json ${LAMBDA_TASK_ROOT}
+
+RUN npm install --production && npm run init:arm64
+
+CMD [ "index.handler" ]
