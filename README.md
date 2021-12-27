@@ -11,7 +11,7 @@ Runs basic [Express](https://www.npmjs.com/package/express) and [Sharp](https://
 
 ## Setup
 
-1. `npm i && cd docker && npm i && cd ..`
+1. `npm i && cd docker/node && npm i && cd ../..`
 2. `pulumi up -y`
 3. `npm run docker`
 4. Go to the AWS Lambda console and run `lambda-benchmarks-main-runner` function.

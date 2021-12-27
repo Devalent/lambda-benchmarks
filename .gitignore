@@ -4,4 +4,4 @@ build
 dist
 node_modules
 
-docker/*.js
+docker/node/*.js

@@ -1,0 +1,14 @@
+FROM public.ecr.aws/lambda/python:3.8-arm64
+
+RUN yum -y groupinstall "Development Tools" && \
+    yum -y install gcc-c++ make cmake
+
+COPY requirements.txt .
+
+RUN pip install -r requirements.txt --target "${LAMBDA_TASK_ROOT}"
+
+COPY app.py train.py Breast_cancer_data.csv ${LAMBDA_TASK_ROOT}
+
+RUN python train.py
+
+CMD [ "app.handler" ]
